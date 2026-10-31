@@ -25,12 +25,10 @@ LAB-02/
 
 ## Installation
 
-Install the required packages using the following commands:
+Install the project dependencies:
 
 ```bash
-npm init -y
-npm install express sqlite sqlite3
-npm install --save-dev nodemon
+npm install
 ```
 
 ## Database Details
@@ -51,19 +49,21 @@ The application creates the database and book table automatically when the serve
 
 ## Running the Application
 
-Start the server using:
+Start the server using the production script:
 
 ```bash
-node app.js
+npm start
 ```
 
-Or use Nodemon:
+For local development with automatic restarts:
 
 ```bash
-npx nodemon app.js
+npm run dev
 ```
 
-Server URL:
+The server uses the hosting platform's `PORT` environment variable when available, and defaults to port `3000` for local use. The SQLite database path is resolved relative to `app.js`.
+
+Local server URL:
 
 ```text
 http://localhost:3000/
@@ -96,6 +96,8 @@ http://localhost:3000/
 ```
 
 - Description: Adds a new book to the database.
+- Required fields: non-empty `title` and `author`, non-negative integer `price`, and positive integer `pages`.
+- Success status: `201 Created`; invalid input returns `400 Bad Request`.
 
 ### 4. Update a Book
 - Method: PUT

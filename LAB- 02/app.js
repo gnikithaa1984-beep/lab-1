@@ -1,140 +1,179 @@
-
 const express = require("express");
 const sqlite3 = require("sqlite3");
-const { open } = require("sqlite");
+const sqlite = require("sqlite");
+const path = require("path");
 
 const app = express();
 
 app.use(express.json());
 
-const databasePath = "./books.db";
+const dbPath = path.join(__dirname, "books.db");
+const PORT = process.env.PORT || 3000;
+let db = null;
 
-let db;
-
-// Initialize database and start server
 const initializeDBAndServer = async () => {
   try {
-    db = await open({
-      filename: databasePath,
+    db = await sqlite.open({
+      filename: dbPath,
       driver: sqlite3.Database,
     });
 
-    console.log("Database connected successfully");
-
-    // Create books table
     await db.exec(`
       CREATE TABLE IF NOT EXISTS book (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
-        title TEXT,
-        author TEXT,
-        price INTEGER,
-        pages INTEGER
+        title TEXT NOT NULL,
+        author TEXT NOT NULL,
+        price INTEGER NOT NULL,
+        pages INTEGER NOT NULL
       );
     `);
 
-    // Insert sample books if table is empty
-    const result = await db.get("SELECT COUNT(*) AS count FROM book");
+    const result = await db.get(
+      "SELECT COUNT(*) AS count FROM book"
+    );
 
     if (result.count === 0) {
-      const books = [
-        ["The Alchemist", "Paulo Coelho", 250, 180],
-        ["Wings of Fire", "A.P.J. Abdul Kalam", 300, 200],
-        ["Harry Potter", "J.K. Rowling", 450, 320],
-        ["The Jungle Book", "Rudyard Kipling", 200, 150],
-        ["Atomic Habits", "James Clear", 500, 280],
-        ["Rich Dad Poor Dad", "Robert Kiyosaki", 350, 240],
-        ["The Secret", "Rhonda Byrne", 280, 190],
-        ["Ikigai", "Hector Garcia", 320, 210],
-      ];
+      await db.run(`
+        INSERT INTO book (title, author, price, pages)
+        VALUES
+        ('Wings of Fire', 'A.P.J. Abdul Kalam', 250, 180),
+        ('The Alchemist', 'Paulo Coelho', 300, 208),
+        ('Atomic Habits', 'James Clear', 450, 320),
+        ('Ikigai', 'Hector Garcia', 350, 194),
+        ('Rich Dad Poor Dad', 'Robert Kiyosaki', 400, 336),
+        ('The Power of Habit', 'Charles Duhigg', 420, 371),
+        ('Deep Work', 'Cal Newport', 380, 296),
+        ('Think Like a Monk', 'Jay Shetty', 399, 288),
+        ('The Psychology of Money', 'Morgan Housel', 350, 256),
+        ('The 5 AM Club', 'Robin Sharma', 450, 336);
+      `);
 
-      for (const book of books) {
-        await db.run(
-          `INSERT INTO book (title, author, price, pages)
-           VALUES (?, ?, ?, ?)`,
-          book
-        );
-      }
+      console.log("10 sample books inserted successfully");
     }
 
-    app.listen(3000, () => {
-      console.log("Server running at http://localhost:3000/");
+    app.get("/books/", async (request, response) => {
+      try {
+        const books = await db.all(
+          "SELECT * FROM book ORDER BY id"
+        );
+        response.status(200).send(books);
+      } catch (error) {
+        response.status(500).send({ error: "Failed to retrieve books" });
+      }
+    });
+
+    app.get("/books/:bookId/", async (request, response) => {
+      try {
+        const { bookId } = request.params;
+
+        const book = await db.get(
+          "SELECT * FROM book WHERE id = ?",
+          [bookId]
+        );
+
+        if (!book) {
+          return response.status(404).send({ error: "Book not found" });
+        }
+
+        response.status(200).send(book);
+      } catch (error) {
+        response.status(500).send({ error: "Failed to retrieve book" });
+      }
+    });
+
+    app.post("/books/", async (request, response) => {
+      try {
+        const { title, author, price, pages } = request.body;
+
+        if (
+          typeof title !== "string" || !title.trim() ||
+          typeof author !== "string" || !author.trim() ||
+          !Number.isInteger(price) || price < 0 ||
+          !Number.isInteger(pages) || pages <= 0
+        ) {
+          return response.status(400).send({
+            error: "Enter a valid title, author, price and pages",
+          });
+        }
+
+        const result = await db.run(
+          `INSERT INTO book (title, author, price, pages)
+           VALUES (?, ?, ?, ?)`,
+          [title.trim(), author.trim(), price, pages]
+        );
+
+        response.status(201).send({
+          message: "Book added successfully",
+          bookId: result.lastID,
+        });
+      } catch (error) {
+        response.status(500).send({ error: "Failed to add book" });
+      }
+    });
+
+    app.put("/books/:bookId/", async (request, response) => {
+      try {
+        const { bookId } = request.params;
+        const { title, author, price, pages } = request.body;
+
+        if (
+          typeof title !== "string" || !title.trim() ||
+          typeof author !== "string" || !author.trim() ||
+          !Number.isInteger(price) || price < 0 ||
+          !Number.isInteger(pages) || pages <= 0
+        ) {
+          return response.status(400).send({
+            error: "Enter a valid title, author, price and pages",
+          });
+        }
+
+        const result = await db.run(
+          `UPDATE book
+           SET title = ?, author = ?, price = ?, pages = ?
+           WHERE id = ?`,
+          [title.trim(), author.trim(), price, pages, bookId]
+        );
+
+        if (result.changes === 0) {
+          return response.status(404).send({ error: "Book not found" });
+        }
+
+        response.status(200).send({
+          message: "Book updated successfully",
+        });
+      } catch (error) {
+        response.status(500).send({ error: "Failed to update book" });
+      }
+    });
+
+    app.delete("/books/:bookId/", async (request, response) => {
+      try {
+        const { bookId } = request.params;
+
+        const result = await db.run(
+          "DELETE FROM book WHERE id = ?",
+          [bookId]
+        );
+
+        if (result.changes === 0) {
+          return response.status(404).send({ error: "Book not found" });
+        }
+
+        response.status(200).send({
+          message: "Book deleted successfully",
+        });
+      } catch (error) {
+        response.status(500).send({ error: "Failed to delete book" });
+      }
+    });
+
+    app.listen(PORT, () => {
+      console.log(`Server running on port ${PORT}`);
     });
   } catch (error) {
-    console.log(`Database Error: ${error.message}`);
+    console.error(`Database error: ${error.message}`);
     process.exit(1);
   }
 };
 
-// API 1: Get all books
-app.get("/books/", async (request, response) => {
-  const books = await db.all("SELECT * FROM book");
-  response.send(books);
-});
-
-// API 2: Get a single book
-app.get("/books/:bookId/", async (request, response) => {
-  const { bookId } = request.params;
-
-  const book = await db.get(
-    "SELECT * FROM book WHERE id = ?",
-    [bookId]
-  );
-
-  if (book === undefined) {
-    response.status(404).send("Book not found");
-  } else {
-    response.send(book);
-  }
-});
-
-// API 3: Add a new book
-app.post("/books/", async (request, response) => {
-  const { title, author, price, pages } = request.body;
-
-  const query = `
-    INSERT INTO book (title, author, price, pages)
-    VALUES (?, ?, ?, ?)
-  `;
-
-  await db.run(query, [title, author, price, pages]);
-
-  response.send("Book added successfully");
-});
-
-// API 4: Update a book
-app.put("/books/:bookId/", async (request, response) => {
-  const { bookId } = request.params;
-  const { title, author, price, pages } = request.body;
-
-  const result = await db.run(
-    `UPDATE book
-     SET title = ?, author = ?, price = ?, pages = ?
-     WHERE id = ?`,
-    [title, author, price, pages, bookId]
-  );
-
-  if (result.changes === 0) {
-    response.status(404).send("Book not found");
-  } else {
-    response.send("Book updated successfully");
-  }
-});
-
-// API 5: Delete a book
-app.delete("/books/:bookId/", async (request, response) => {
-  const { bookId } = request.params;
-
-  const result = await db.run(
-    "DELETE FROM book WHERE id = ?",
-    [bookId]
-  );
-
-  if (result.changes === 0) {
-    response.status(404).send("Book not found");
-  } else {
-    response.send("Book deleted successfully");
-  }
-});
-
 initializeDBAndServer();
-
